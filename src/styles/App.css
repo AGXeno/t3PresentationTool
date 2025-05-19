@@ -1,0 +1,209 @@
+:root {
+  --primary-color: #3498db;
+  --secondary-color: #2ecc71;
+  --warning-color: #e74c3c;
+  --dark-color: #2c3e50;
+  --light-color: #ecf0f1;
+  --transition-time: 0.3s;
+}
+
+body {
+  font-family: 'Roboto', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: var(--light-color);
+  color: var(--dark-color);
+}
+
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Timer Component */
+.timer {
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 2.5rem;
+  font-weight: bold;
+  padding: 15px 30px;
+  border-radius: 8px;
+  display: inline-block;
+  margin: 20px 0;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: background-color var(--transition-time);
+}
+
+.timer-warning {
+  background-color: var(--warning-color);
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+/* Countdown Screen */
+.countdown-container {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 80vh;
+}
+
+.countdown-container h1 {
+  font-size: 3rem;
+  margin-bottom: 10px;
+  color: var(--primary-color);
+}
+
+.countdown-container h2 {
+  font-size: 1.8rem;
+  margin-bottom: 30px;
+  color: var(--dark-color);
+}
+
+.countdown-container p {
+  font-size: 1.2rem;
+  margin-top: 20px;
+}
+
+/* Presentation Screen */
+.presentation-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.presentation-container .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.presentation-container h1 {
+  margin: 0;
+  color: var(--primary-color);
+}
+
+.presentation-iframe {
+  width: 100%;
+  height: 70vh;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  margin: 20px 0;
+}
+
+/* Grading Screen */
+.grading-container {
+  text-align: center;
+}
+
+.grading-container .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 2px solid var(--secondary-color);
+}
+
+.grading-container h1 {
+  margin: 0;
+  color: var(--secondary-color);
+}
+
+/* Polling Display */
+.polling-display {
+  margin: 30px 0;
+  text-align: left;
+}
+
+.polling-display h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: var(--dark-color);
+}
+
+.polling-item {
+  margin-bottom: 15px;
+}
+
+.polling-category {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.polling-bar-container {
+  height: 25px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.polling-bar {
+  height: 100%;
+  background-color: var(--secondary-color);
+  transition: width 0.5s ease-in-out;
+}
+
+.polling-value {
+  position: absolute;
+  right: 10px;
+  font-weight: bold;
+}
+
+/* QR Code Display */
+.qrcode-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 20px 0;
+  padding: 15px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.qrcode-display h3 {
+  margin-top: 0;
+  color: var(--primary-color);
+}
+
+.qrcode-url {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  color: #666;
+  word-break: break-all;
+  text-align: center;
+}
+
+/* Completed Screen */
+.completed-container {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 60vh;
+}
+
+.completed-container h1 {
+  font-size: 3rem;
+  color: var(--secondary-color);
+}
