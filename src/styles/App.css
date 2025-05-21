@@ -207,3 +207,286 @@ body {
   font-size: 3rem;
   color: var(--secondary-color);
 }
+
+/* Upload team url */
+.upload-url-button {
+  background-color: #2ecc71;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  margin-top: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.upload-url-button:hover {
+  background-color: #27ae60;
+}
+
+.upload-url-button svg {
+  margin-right: 10px;
+}
+
+.team-urls-list {
+  margin-top: 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  padding: 15px;
+  max-width: 600px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.team-urls-list h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #3498db;
+  font-size: 1.2rem;
+}
+
+.team-url-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.team-url-item:last-child {
+  border-bottom: none;
+}
+
+.team-name {
+  font-weight: bold;
+  color: #333;
+}
+
+.team-url {
+  color: #3498db;
+  font-family: monospace;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.no-url {
+  color: #e74c3c;
+  font-style: italic;
+}
+
+.upload-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Team URL Upload Button Styles */
+.upload-url-button {
+  background-color: #2ecc71;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 16px;
+  margin-top: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.upload-url-button:hover {
+  background-color: #27ae60;
+}
+
+.upload-url-button svg {
+  margin-right: 10px;
+}
+
+/* Team URLs List Styles */
+.team-urls-list {
+  margin-top: 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  padding: 15px;
+  max-width: 600px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.team-urls-list h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #3498db;
+  font-size: 1.2rem;
+}
+
+.team-url-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.team-url-item:last-child {
+  border-bottom: none;
+}
+
+.team-name {
+  font-weight: bold;
+  color: #333;
+}
+
+.team-url {
+  color: #3498db;
+  font-family: monospace;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.no-url {
+  color: #e74c3c;
+  font-style: italic;
+}
+
+.upload-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Team URLs Toggle Styles */
+.team-urls-section {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.toggle-urls-button {
+  background-color: #34495e;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-top: 15px;
+  margin-bottom: 10px;
+}
+
+.toggle-urls-button:hover {
+  background-color: #2c3e50;
+}
+
+.toggle-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+}
+
+/* Animation for showing/hiding the team URLs list */
+.team-urls-list {
+  animation: fadeIn 0.3s ease-in-out;
+  width: 100%;
+  max-width: 600px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* QR Waiting Container Styles */
+.qr-waiting-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 20px 0;
+  padding: 20px;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+}
+
+.qr-waiting-container h2 {
+  margin-bottom: 20px;
+  color: #3498db;
+}
+
+.response-counter {
+  margin-top: 20px;
+  text-align: center;
+  width: 100%;
+  max-width: 500px;
+}
+
+.response-count {
+  font-size: 1.5em;
+  font-weight: bold;
+  color: #3498db;
+}
+
+.progress-bar {
+  height: 20px;
+  background-color: #e0e0e0;
+  border-radius: 10px;
+  margin: 15px 0;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #3498db;
+  transition: width 0.5s ease-in-out;
+}
+
+.results-container {
+  padding: 20px;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+}
+
+.results-container h2 {
+  margin-bottom: 20px;
+  color: #2ecc71;
+  text-align: center;
+}
+
+.response-info {
+  text-align: center;
+  font-style: italic;
+  color: #7f8c8d;
+  margin-top: 10px;
+}
+
+.grading-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 1.1em;
+}
+
+.test-button {
+  margin-top: 20px;
+  padding: 8px 16px;
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.test-button:hover {
+  background-color: #c0392b;
+}
