@@ -8,7 +8,7 @@ import CountdownDisplay from './components/CountdownDisplay';
 import UrlUploadModal from './components/UrlUploadModal';
 import { calculateTimeRemaining, formatTime, getCountdownDisplay } from './utils/timeUtils';
 
-// Memoized TeamUrlsSection component
+// Memoized TeamUrlsSection component to prevent flashing
 const MemoizedTeamUrlsSection = memo(({ teams }) => {
   // Local state for toggle, stored in localStorage to persist between renders
   const [showTeamUrls, setShowTeamUrls] = useState(() => {
@@ -126,7 +126,7 @@ const App = () => {
     ...createEventDates(),
     teamCount: 6,
     presentationTime: demoMode ? (30 * 1000) : (12 * 60 * 1000), // 30 sec or 12 min
-    gradingTime: demoMode ? (15 * 1000) : (3 * 60 * 1000),       // 15 sec or 3 min
+    gradingTime: demoMode ? (40 * 1000) : (3 * 60 * 1000),       // 15 sec or 3 min
     warningTime: demoMode ? (10 * 1000) : (60 * 1000)            // 10 sec or 1 min warning
   };
   
@@ -150,13 +150,27 @@ const App = () => {
   const [counter, setCounter] = useState(0); // Add a counter to force re-renders
   const [pollResponses, setPollResponses] = useState(0); // Track number of poll responses
   const [showGradingResults, setShowGradingResults] = useState(false); // Whether to show results
+  
+  // Updated polling data structure to match grading app format
   const [pollingData, setPollingData] = useState({
-    'Content Quality': 4.5,
-    'Technical Implementation': 4.2,
-    'Presentation Skills': 3.8,
-    'User Experience': 4.7,
-    'Innovation': 4.0
+    averages: {
+      clarity: 0,
+      delivery: 0,
+      confidence: 0
+    },
+    submittedCount: 0,
+    submissions: []
   });
+  
+  // Individual scores from grading app
+  const [individualScores, setIndividualScores] = useState([]);
+  
+  // Connected peers (grading apps)
+  const [connectedPeers, setConnectedPeers] = useState([]);
+  
+  // MQTT client connection status
+  const [mqttConnected, setMqttConnected] = useState(false);
+  
   const [mqttClient, setMqttClient] = useState(null);
   
   // Minimum responses needed to show results (adjust as needed)
@@ -194,48 +208,121 @@ const App = () => {
   // Warning sound
   const [warning] = useState(createWarningSound);
 
-  // Initialize MQTT client
+const checkAndShowResults = (responseCount) => {
+  if (responseCount >= minPollResponses && !showGradingResults) {
+    setShowGradingResults(true);
+    console.log(`🎉 Showing results! Received ${responseCount} responses (minimum: ${minPollResponses})`);
+  }
+};
+
+  // Handle individual score submission from grading app
+const handleIndividualScore = (scoreData) => {
+  console.log('📝 Processing individual score:', scoreData);
+  
+  setIndividualScores(prev => {
+    // Check if this score already exists to avoid duplicates
+    const existingIndex = prev.findIndex(score => 
+      score.studentId === scoreData.studentId && 
+      score.timestamp === scoreData.timestamp
+    );
+    
+    if (existingIndex === -1) {
+      const updated = [...prev, scoreData];
+      console.log('✅ Added new score. Total scores:', updated.length);
+      return updated;
+    }
+    
+    console.log('⚠️ Duplicate score detected, skipping');
+    return prev;
+  });
+  
+  // Update poll responses count and check if we should show results
+  setPollResponses(prev => {
+    const newCount = prev + 1;
+    console.log('📊 Updated poll responses count:', newCount);
+    
+    // Check if we should show results now
+    checkAndShowResults(newCount);
+    
+    return newCount;
+  });
+};
+
+  // Handle summary update from grading app
+const handleSummaryUpdate = (summaryData) => {
+  console.log('📈 Processing summary update:', summaryData);
+  
+  setPollingData(summaryData);
+  setPollResponses(summaryData.submittedCount);
+  
+  // Check if we should show results
+  checkAndShowResults(summaryData.submittedCount);
+};
+
+  // Handle new peer detection (grading app connection)
+  const handleNewPeer = (peerData) => {
+    console.log('New peer detected:', peerData);
+    
+    setConnectedPeers(prev => {
+      const existing = prev.find(p => p.peerId === peerData.peerId);
+      if (!existing) {
+        const updated = [...prev, peerData];
+        console.log('Added new peer. Total peers:', updated.length);
+        return updated;
+      }
+      return prev;
+    });
+  };
+
+  // Handle state synchronization from other peers
+  const handleStateSync = (syncData) => {
+    console.log('Processing state sync:', syncData);
+    
+    if (syncData.scores && Array.isArray(syncData.scores)) {
+      const scores = syncData.scores.map(([studentId, scoreData]) => scoreData);
+      setIndividualScores(scores);
+      console.log('Synchronized scores from peer:', scores.length);
+    }
+  };
+
+  // Initialize MQTT client with grading app integration
   useEffect(() => {
     try {
-      // This will be changed to the UVU MQTT before production
-      const client = new MQTTClient('mqtt://localhost:1883');
-      // For production: const client = new MQTTClient('mqtt://mqtt.uvu.cs:1883');
+      // Use WebSocket connection as specified by grading app team
+      // Update with your actual class broker address
+      //const client = new MQTTClient('ws://mqtt.uvu.cs:9001');
+
+      // Testing broker client of my own
+      const client = new MQTTClient('wss://broker.emqx.io:8084/mqtt');
       
       client.onConnect(() => {
-        console.log('Connected to MQTT broker');
-        client.subscribe('polling/results');
+        console.log('✅ Connected to grading app MQTT broker');
+        setMqttConnected(true);
       });
       
       client.onMessage((topic, message) => {
-        if (topic === 'polling/results') {
-          try {
-            const data = JSON.parse(message.toString());
-            setPollingData(data);
+        try {
+          const data = JSON.parse(message.toString());
+          console.log(`📨 Received MQTT message on topic '${topic}':`, data);
+          
+          if (topic.startsWith('scores/')) {
+            // Individual score submission
+            handleIndividualScore(data);
             
-            // Check if this is a new response
-            if (data.responseCount !== undefined) {
-              setPollResponses(data.responseCount);
-              
-              // Auto-show results once minimum threshold is reached
-              if (data.responseCount >= minPollResponses && !showGradingResults) {
-                setShowGradingResults(true);
-                console.log(`Showing poll results after receiving ${data.responseCount} responses`);
-              }
-            } else {
-              // If responseCount is not included, increment our counter
-              setPollResponses(prev => {
-                const newCount = prev + 1;
-                // Auto-show results once minimum threshold is reached
-                if (newCount >= minPollResponses && !showGradingResults) {
-                  setShowGradingResults(true);
-                  console.log(`Showing poll results after receiving ${newCount} responses`);
-                }
-                return newCount;
-              });
-            }
-          } catch (error) {
-            console.error('Error parsing polling data:', error);
+          } else if (topic.startsWith('summary/')) {
+            // Summary update
+            handleSummaryUpdate(data);
+            
+          } else if (topic === 'presence') {
+            // New peer announcement
+            handleNewPeer(data);
+            
+          } else if (data.type === 'state_sync') {
+            // State synchronization from another peer
+            handleStateSync(data);
           }
+        } catch (error) {
+          console.error('❌ Error parsing MQTT message:', error);
         }
       });
       
@@ -243,11 +330,14 @@ const App = () => {
       
       return () => {
         if (client) {
+          console.log('🔌 Disconnecting MQTT client');
           client.disconnect();
+          setMqttConnected(false);
         }
       };
     } catch (error) {
-      console.error('MQTT client initialization failed:', error);
+      console.error('❌ MQTT client initialization failed:', error);
+      setMqttConnected(false);
       // Continue without MQTT for demonstration
     }
   }, []);
@@ -258,16 +348,25 @@ const App = () => {
       const savedTeams = localStorage.getItem('presentationToolTeams');
       if (savedTeams) {
         setTeams(JSON.parse(savedTeams));
+        console.log('📂 Loaded saved team URLs from localStorage');
       }
     } catch (error) {
-      console.error('Error loading teams from localStorage:', error);
+      console.error('❌ Error loading teams from localStorage:', error);
     }
   }, []);
 
   // Reset poll counters when team changes
   useEffect(() => {
+    console.log(`🔄 Team changed to Team ${currentTeamIndex + 1}, resetting poll data`);
+    
     setPollResponses(0);
     setShowGradingResults(false);
+    setIndividualScores([]);
+    setPollingData({
+      averages: { clarity: 0, delivery: 0, confidence: 0 },
+      submittedCount: 0,
+      submissions: []
+    });
   }, [currentTeamIndex]);
 
   // Display debug info on mount
@@ -275,70 +374,6 @@ const App = () => {
     console.log(`[EVENT INFO] Start: ${eventConfig.date.toLocaleTimeString()}, End: ${eventConfig.endTime.toLocaleTimeString()}`);
     console.log(`[PRESENTATION] Team time: ${eventConfig.presentationTime / 60000} minutes, Grading time: ${eventConfig.gradingTime / 60000} minutes`);
   }, [eventConfig]);
-  
-  // Function to simulate poll responses (for testing)
-  const simulatePollResponses = () => {
-    if (!demoMode) return;
-    
-    let count = 0;
-    const simulationInterval = setInterval(() => {
-      count++;
-      
-      // Generate random polling data
-      const newPollingData = {
-        'Content Quality': (3 + Math.random() * 2).toFixed(1),
-        'Technical Implementation': (3 + Math.random() * 2).toFixed(1),
-        'Presentation Skills': (3 + Math.random() * 2).toFixed(1),
-        'User Experience': (3 + Math.random() * 2).toFixed(1), 
-        'Innovation': (3 + Math.random() * 2).toFixed(1),
-        'responseCount': count
-      };
-      
-      // Convert all string values to numbers
-      Object.keys(newPollingData).forEach(key => {
-        if (key !== 'responseCount') {
-          newPollingData[key] = parseFloat(newPollingData[key]);
-        }
-      });
-      
-      // Update state variables
-      setPollingData(newPollingData);
-      setPollResponses(count);
-      
-      // Auto-show results once minimum threshold is reached
-      if (count >= minPollResponses && !showGradingResults) {
-        setShowGradingResults(true);
-      }
-      
-      // Stop after 8 responses
-      if (count >= 8) {
-        clearInterval(simulationInterval);
-      }
-    }, 5000); // Simulate a new response every 5 seconds
-    
-    // Clear interval when component unmounts or team changes
-    return () => clearInterval(simulationInterval);
-  };
-
-  // Add this effect to trigger simulation during demo mode
-  useEffect(() => {
-    if (demoMode && currentState === 'grading') {
-      // Reset poll responses when entering grading mode
-      setPollResponses(0);
-      setShowGradingResults(false);
-      
-      // Start simulation with a small delay
-      const simulationTimeout = setTimeout(() => {
-        const cleanupFn = simulatePollResponses();
-        return () => {
-          clearTimeout(simulationTimeout);
-          if (cleanupFn) cleanupFn();
-        };
-      }, 3000);
-      
-      return () => clearTimeout(simulationTimeout);
-    }
-  }, [demoMode, currentState, currentTeamIndex]);
 
   // Update team URL function
   const handleUpdateTeamUrl = (teamId, newUrl) => {
@@ -349,13 +384,13 @@ const App = () => {
     setTeams(updatedTeams);
     
     // Log the update
-    console.log(`Updated URL for Team ${teamId} to: ${newUrl}`);
+    console.log(`🔗 Updated URL for Team ${teamId} to: ${newUrl}`);
     
     // Save to localStorage for persistence
     try {
       localStorage.setItem('presentationToolTeams', JSON.stringify(updatedTeams));
     } catch (error) {
-      console.error('Error saving teams to localStorage:', error);
+      console.error('❌ Error saving teams to localStorage:', error);
     }
   };
 
@@ -373,7 +408,6 @@ const App = () => {
         setCurrentState('countdown');
         const remaining = calculateTimeRemaining(currentTime, eventConfig.date);
         setTimeRemaining(remaining);
-        console.log('Countdown:', formatTime(remaining, 'mm:ss'));
         return;
       }
       
@@ -409,8 +443,6 @@ const App = () => {
         const presentationTimeRemaining = eventConfig.presentationTime - timeInCurrentTeamSlot;
         setTimeRemaining(presentationTimeRemaining);
         
-        console.log('Presentation time remaining:', formatTime(presentationTimeRemaining, 'mm:ss'));
-        
         // Play warning sound if time is almost up
         if (presentationTimeRemaining <= eventConfig.warningTime && 
             presentationTimeRemaining > eventConfig.warningTime - 1000) {
@@ -422,18 +454,20 @@ const App = () => {
         const gradingTimeRemaining = teamTime - timeInCurrentTeamSlot;
         setTimeRemaining(gradingTimeRemaining);
         
-        console.log('Grading time remaining:', formatTime(gradingTimeRemaining, 'mm:ss'));
-        
-        // Notify grading app through MQTT
+        // Notify grading app through MQTT when entering grading mode
         if (mqttClient && Math.abs(timeInCurrentTeamSlot - eventConfig.presentationTime) < 1000) {
           try {
-            mqttClient.publish('presentation/grading', JSON.stringify({
+            const gradingInfo = {
               team: teams[currentTeamIdx].id,
+              teamName: teams[currentTeamIdx].name,
               startTime: currentTime.toISOString(),
               endTime: new Date(currentTime.getTime() + eventConfig.gradingTime).toISOString()
-            }));
+            };
+            
+            mqttClient.notifyGradingWindow(gradingInfo);
+            console.log('📢 Sent grading window notification:', gradingInfo);
           } catch (error) {
-            console.error('Error publishing to MQTT:', error);
+            console.error('❌ Error publishing grading notification:', error);
           }
         }
         
@@ -446,7 +480,7 @@ const App = () => {
     }, 1000);
     
     return () => clearInterval(timerInterval);
-  }, [currentTeamIndex]); // Reduced dependencies to avoid recreation issues
+  }, [currentTeamIndex, mqttClient, teams, warning]); // Added missing dependencies
 
   // Upload URL button component with icon
   const UploadUrlButton = () => (
@@ -458,6 +492,14 @@ const App = () => {
       </svg>
       Upload Team URL
     </button>
+  );
+
+  // Connection status indicator
+  const ConnectionStatus = () => (
+    <div className="connection-status">
+      <div className={`connection-dot ${mqttConnected ? '' : 'disconnected'}`}></div>
+      <span>{mqttConnected ? 'Connected' : 'Disconnected'}</span>
+    </div>
   );
 
   // Render different views based on current state
@@ -480,11 +522,23 @@ const App = () => {
             
             <p>First team presents at {eventConfig.date.toLocaleString()}</p>
             
+            {/* Connection Status */}
+            <div className="mqtt-status">
+              <ConnectionStatus />
+            </div>
+            
             {/* Add the Upload Team URL button */}
             <UploadUrlButton />
             
             {/* Use the memoized team URLs section component */}
             <MemoizedTeamUrlsSection teams={teams} />
+            
+            {/* Show connected peers info */}
+            {connectedPeers.length > 0 && (
+              <div className="connected-peers">
+                <p>🟢 Connected grading apps: {connectedPeers.length}</p>
+              </div>
+            )}
             
             {/* URL Upload Modal */}
             <UrlUploadModal 
@@ -509,74 +563,88 @@ const App = () => {
             </div>
             <PresentationDisplay url={teams[currentTeamIndex].demoUrl} />
             <div style={{ backgroundColor: '#f8f9fa', padding: '20px', textAlign: 'center', marginTop: '20px' }}>
-              <p><strong>Note:</strong> In the actual application, the iframe above would load the team's demo. 
-              For this simulation, we're showing a placeholder URL: {teams[currentTeamIndex].demoUrl}</p>
+              <p><strong>Note:</strong> The iframe above displays the team's demo application. 
+              URL: {teams[currentTeamIndex].demoUrl}</p>
             </div>
             <QRCodeDisplay url={window.location.origin + '/poll?team=' + teams[currentTeamIndex].id} />
           </div>
         );
       
-      case 'grading':
-        return (
-          <div className="grading-container">
-            <div className="header">
-              <h1>Grade {teams[currentTeamIndex].name}</h1>
-              <Timer 
-                timeRemaining={timeRemaining} 
-                format="mm:ss"
-                warning={timeRemaining <= eventConfig.warningTime}
-              />
-            </div>
-            
-            {/* Condition for showing QR code vs. results */}
-            {!showGradingResults ? (
-              // Still waiting for enough responses - show QR code with counter
-              <div className="qr-waiting-container">
-                <h2>Please scan the QR code to submit your evaluation</h2>
-                <QRCodeDisplay url={window.location.origin + '/poll?team=' + teams[currentTeamIndex].id} />
-                <div className="response-counter">
-                  <p>Responses received: <span className="response-count">{pollResponses}</span> / {minPollResponses} needed</p>
-                  {pollResponses > 0 && (
-                    <div className="progress-bar">
-                      <div 
-                        className="progress-fill"
-                        style={{ width: `${Math.min(100, (pollResponses / minPollResponses) * 100)}%` }}
-                      ></div>
-                    </div>
-                  )}
-                  <p>Results will display once {minPollResponses} evaluations are received</p>
-                </div>
-                
-                {/* For testing - button to manually show results */}
-                {demoMode && (
-                  <button 
-                    onClick={() => setShowGradingResults(true)}
-                    className="test-button"
-                  >
-                    Show Results (Test)
-                  </button>
-                )}
-              </div>
-            ) : (
-              // Enough responses received - show poll results
-              <div className="results-container">
-                <h2>Evaluation Results</h2>
-                <PollingDisplay pollingData={pollingData} />
-                <div className="response-info">
-                  <p>Based on {pollResponses} evaluations</p>
-                </div>
+case 'grading':
+  return (
+    <div className="grading-container">
+      <div className="header">
+        <h1>Grade {teams[currentTeamIndex].name}</h1>
+        <Timer 
+          timeRemaining={timeRemaining} 
+          format="mm:ss"
+          warning={timeRemaining <= eventConfig.warningTime}
+        />
+      </div>
+      
+      {/* Condition for showing QR code vs. results */}
+      {!showGradingResults ? (
+        // Still waiting for enough responses - show QR code with counter
+        <div className="qr-waiting-container">
+          <h2>Please scan the QR code to submit your evaluation</h2>
+          <QRCodeDisplay url={window.location.origin + '/poll?team=' + teams[currentTeamIndex].id} />
+          <div className="response-counter">
+            <p>Responses received: <span className="response-count">{pollResponses}</span> / {minPollResponses} needed</p>
+            {pollResponses > 0 && (
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill"
+                  style={{ width: `${Math.min(100, (pollResponses / minPollResponses) * 100)}%` }}
+                ></div>
               </div>
             )}
+            <p>Results will display once {minPollResponses} evaluations are received</p>
             
-            <p className="grading-footer">Grading period ends in <strong>{formatTime(timeRemaining, 'mm:ss')}</strong></p>
+            {/* Show connection status */}
+            <div className="grading-status">
+              <ConnectionStatus />
+              {connectedPeers.length > 0 && (
+                <span style={{ marginLeft: '15px' }}>
+                  📱 {connectedPeers.length} grading app(s) connected
+                </span>
+              )}
+            </div>
           </div>
-        );
+          
+          {/* For testing - button to manually show results */}
+          {demoMode && (
+            <button 
+              onClick={() => setShowGradingResults(true)}
+              className="test-button"
+            >
+              Show Results (Test)
+            </button>
+          )}
+        </div>
+      ) : (
+        // Enough responses received - show poll results
+        <div className="results-container">
+          {/* REMOVED: <h2>Evaluation Results</h2> */}
+          <PollingDisplay pollingData={pollingData} currentTeam={teams[currentTeamIndex]} />
+          <div className="response-info">
+            <p>📊 Based on {pollResponses} evaluations from {connectedPeers.length} grading app(s)</p>
+          </div>
+        </div>
+      )}
+      
+      <p className="grading-footer">Grading period ends in <strong>{formatTime(timeRemaining, 'mm:ss')}</strong></p>
+    </div>
+  );
       
       case 'completed':
         return (
           <div className="completed-container">
             <h1>Presentations Completed</h1>
             <p>Thank you for participating!</p>
+            <div className="final-stats">
+              <p>Total evaluations received: {individualScores.length}</p>
+              <p>Connected grading apps: {connectedPeers.length}</p>
+            </div>
           </div>
         );
       
@@ -585,35 +653,31 @@ const App = () => {
     }
   };
 
-  // Status bar that shows the simulation information
+  // Enhanced status bar with MQTT connection info
   const renderSimulationStatus = () => {
     return (
-      <div style={{
+      <div className="status-bar-extended" style={{
         position: 'fixed',
         bottom: 0,
         left: 0,
         right: 0,
         backgroundColor: '#333',
         color: 'white',
-        padding: '10px',
-        textAlign: 'center',
-        fontSize: '14px'
+        padding: '8px 15px',
+        fontSize: '13px'
       }}>
-        <div>
-          <strong>SIMULATION MODE</strong> | 
-          Current State: <span style={{ color: '#4ade80' }}>{currentState}</span> | 
+        <div className="status-left">
+          <strong>{demoMode ? '⚡ DEMO MODE' : '🎯 LIVE MODE'}</strong>
+        </div>
+        <div className="status-center">
+          State: <span style={{ color: '#4ade80' }}>{currentState}</span> | 
           Team: <span style={{ color: '#4ade80' }}>{currentTeamIndex + 1}</span> | 
-          Actual Time: <span style={{ color: '#4ade80' }}>{new Date().toLocaleTimeString()}</span>
+          Time: <span style={{ color: '#4ade80' }}>{new Date().toLocaleTimeString()}</span>
         </div>
-        <div style={{ fontSize: '12px', marginTop: '5px' }}>
-          {demoMode ? 
-            '⚡ DEMO MODE: Fast transitions (30s presentation, 15s grading)' : 
-            'Normal timing: 12min presentation, 3min grading'}
-        </div>
-        <div style={{ fontSize: '11px', marginTop: '5px', fontFamily: 'monospace' }}>
-          Timer: {timeRemaining ? Math.floor(timeRemaining/1000) + 's' : '--'} | 
-          Tick: {counter} | 
-          Format: {formatTime(timeRemaining, 'mm:ss')}
+        <div className="status-right">
+          <ConnectionStatus /> | 
+          Peers: <span style={{ color: '#4ade80' }}>{connectedPeers.length}</span> | 
+          Scores: <span style={{ color: '#4ade80' }}>{pollResponses}</span>
         </div>
       </div>
     );

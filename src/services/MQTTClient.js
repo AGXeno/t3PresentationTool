@@ -1,21 +1,20 @@
-// This is where everything happens to obtain the polling results to the display iframe. 
-// How it's going to work:
-// 1. Users will scan the QR code and submit their ratings through the polling app
-// 2. Thier app will publish the results through MQTT
-// 3. We recieve that data from them
 import mqtt from 'mqtt';
 
 class MQTTClient {
-  constructor(brokerUrl) {
+  constructor(brokerUrl, options = {}) {
     this.client = null;
     this.brokerUrl = brokerUrl;
+    this.options = options;
+    this.peerId = `presentation_tool_${Math.random().toString(16).substr(2, 8)}`;
     this.connect();
   }
 
   connect() {
+    // Use WebSocket connection as specified by the grading app team
     this.client = mqtt.connect(this.brokerUrl, {
-      clientId: `presentation_tool_${Math.random().toString(16).substr(2, 8)}`,
+      clientId: this.peerId,
       clean: true,
+      ...this.options
     });
     
     this.client.on('error', (err) => {
@@ -33,7 +32,19 @@ class MQTTClient {
   }
 
   onConnect(callback) {
-    this.client.on('connect', callback);
+    this.client.on('connect', () => {
+      console.log('Connected to MQTT broker with peer ID:', this.peerId);
+      
+      // Subscribe to grading app topics using wildcards
+      this.subscribe('scores/#');
+      this.subscribe('summary/#');
+      this.subscribe('presence');
+      
+      // Announce our presence
+      this.announcePresence();
+      
+      callback();
+    });
   }
 
   onMessage(callback) {
@@ -41,7 +52,7 @@ class MQTTClient {
   }
 
   subscribe(topic) {
-    if (this.client.connected) {
+    if (this.client && this.client.connected) {
       this.client.subscribe(topic, (err) => {
         if (!err) {
           console.log(`Subscribed to ${topic}`);
@@ -55,7 +66,7 @@ class MQTTClient {
   }
 
   publish(topic, message) {
-    if (this.client.connected) {
+    if (this.client && this.client.connected) {
       this.client.publish(topic, message, { qos: 1 }, (err) => {
         if (err) {
           console.error(`Publish error: ${err}`);
@@ -66,10 +77,41 @@ class MQTTClient {
     }
   }
 
+  // Announce our presence to the grading app
+  announcePresence() {
+    const presenceData = {
+      peerId: this.peerId,
+      timestamp: new Date().toISOString(),
+      type: 'presentation_tool'
+    };
+    
+    this.publish('presence', JSON.stringify(presenceData));
+  }
+
+  // Send grading window notification to peers
+  notifyGradingWindow(teamInfo) {
+    const gradingNotification = {
+      type: 'grading_window',
+      team: teamInfo.team,
+      teamName: teamInfo.teamName,
+      startTime: teamInfo.startTime,
+      endTime: teamInfo.endTime,
+      source: this.peerId,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Send to a presentation-specific topic
+    this.publish(`presentation/grading/${this.peerId}`, JSON.stringify(gradingNotification));
+  }
+
   disconnect() {
     if (this.client) {
       this.client.end();
     }
+  }
+
+  getPeerId() {
+    return this.peerId;
   }
 }
 
