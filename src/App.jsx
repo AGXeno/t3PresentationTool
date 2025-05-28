@@ -6,7 +6,7 @@ import PollingDisplay from './components/PollingDisplay';
 import QRCodeDisplay from './components/QRCodeDisplay';
 import CountdownDisplay from './components/CountdownDisplay';
 import UrlUploadModal from './components/UrlUploadModal';
-import { calculateTimeRemaining, formatTime } from './utils/timeUtils';
+import { calculateTimeRemaining, getCountdownDisplay } from './utils/timeUtils';
 
 // Memoized TeamUrlsSection component to prevent flashing
 const MemoizedTeamUrlsSection = memo(({ teams }) => {
