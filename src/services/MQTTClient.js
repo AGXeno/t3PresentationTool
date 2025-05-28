@@ -40,6 +40,14 @@ class MQTTClient {
       this.subscribe('summary/#');
       this.subscribe('presence');
       
+      // 🔧 Subscribe to broadcast topics for peer discovery issues
+      this.subscribe('scores/broadcast');
+      this.subscribe('presentation/scores/broadcast');
+      this.subscribe('scores/all'); // 🔧 NEW: Additional broadcast topic
+      this.subscribe('summary/broadcast'); // 🔧 NEW: Summary broadcast topic
+      
+      console.log('🔧 Added broadcast topic subscriptions for peer discovery fallback');
+      
       // Announce our presence
       this.announcePresence();
       
@@ -48,7 +56,32 @@ class MQTTClient {
   }
 
   onMessage(callback) {
-    this.client.on('message', callback);
+    this.client.on('message', (topic, message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        
+        // 🔧 Handle broadcast scores (UPDATED to include 'scores/all')
+        if (topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast' || topic === 'scores/all') {
+          console.log('🔧 Received broadcast score:', data);
+          // Convert broadcast to standard format
+          callback('scores/broadcast', message);
+          return;
+        }
+        
+        // 🔧 Handle broadcast summaries
+        if (topic === 'summary/broadcast') {
+          console.log('🔧 Received broadcast summary:', data);
+          callback('summary/broadcast', message);
+          return;
+        }
+        
+        // Handle regular messages
+        callback(topic, message);
+      } catch (error) {
+        console.error('Error parsing MQTT message:', error);
+        callback(topic, message);
+      }
+    });
   }
 
   subscribe(topic) {
@@ -86,6 +119,10 @@ class MQTTClient {
     };
     
     this.publish('presence', JSON.stringify(presenceData));
+    
+    // 🔧 Also announce on broadcast channel
+    this.publish('presence/broadcast', JSON.stringify(presenceData));
+    console.log('🔧 Announced presence on both regular and broadcast channels');
   }
 
   // Send grading window notification to peers
@@ -104,7 +141,7 @@ class MQTTClient {
     this.publish(`presentation/grading/${this.peerId}`, JSON.stringify(gradingNotification));
   }
 
-  // NEW: Send team reset notification to all grading apps
+  // Send team reset notification to all grading apps
   notifyTeamReset(teamInfo) {
     const resetNotification = {
       type: 'team_reset',
@@ -122,7 +159,7 @@ class MQTTClient {
     console.log('🔄 Sent team reset notification:', resetNotification);
   }
 
-  // NEW: Manual reset trigger (for testing or admin use)
+  // Manual reset trigger (for testing or admin use)
   triggerManualReset(reason = 'Manual reset from presentation tool') {
     const resetNotification = {
       type: 'team_reset',
@@ -140,12 +177,25 @@ class MQTTClient {
     console.log('🔄 Triggered manual reset:', resetNotification);
   }
 
-  // NEW: Check connection status
+  // 🔧 Force grading apps to use broadcast mode
+  triggerBroadcastMode() {
+    const broadcastTrigger = {
+      type: 'force_broadcast_mode',
+      reason: 'Peer discovery issues detected',
+      source: this.peerId,
+      timestamp: new Date().toISOString()
+    };
+    
+    this.publish('system/broadcast_mode', JSON.stringify(broadcastTrigger));
+    console.log('🔧 Triggered broadcast mode for grading apps');
+  }
+
+  // Check connection status
   isConnected() {
     return this.client && this.client.connected;
   }
 
-  // NEW: Get connection info
+  // Get connection info
   getConnectionInfo() {
     return {
       peerId: this.peerId,

@@ -135,7 +135,7 @@ const App = () => {
   
   // Convert teams array to state so we can update it
   const [teams, setTeams] = useState([
-    { id: 1, name: 'Team 1', demoUrl: 'https://example.com/' },
+    { id: 1, name: 'Team 1', demoUrl: 'https://grading-tool-application.netlify.app/' },
     { id: 2, name: 'Team 2', demoUrl: 'https://httpbin.org/' },
     { id: 3, name: 'Team 3', demoUrl: 'https://jsfiddle.net/gh/get/library/pure/highcharts/highcharts/tree/master/samples/highcharts/demo/line-basic/' },
     { id: 4, name: 'Team 4', demoUrl: 'https://codepen.io/pen/' },
@@ -519,43 +519,48 @@ const App = () => {
         setMqttConnected(true);
       });
       
-      client.onMessage((topic, message) => {
-        try {
-          const data = JSON.parse(message.toString());
-          const currentTime = new Date().toLocaleTimeString();
-          console.log(`📨 [${currentTime}] Received MQTT message on topic '${topic}':`, data);
-          
-          // Add state debugging for score messages using refs
-          if (topic.startsWith('scores/')) {
-            console.log(`🔍 MQTT Handler State Check: currentState="${currentStateRef.current}", currentTeamIndex=${currentTeamIndexRef.current + 1}, gradingStartTime=${currentTeamGradingStartTimeRef.current?.toLocaleTimeString() || 'null'}`);
-          }
-          
-          if (topic.startsWith('scores/')) {
-            // Check if this is a state sync message first
-            if (data.type === 'state_sync') {
-              // State synchronization from another peer
-              handleStateSync(data);
-            } else {
-              // Individual score submission
-              handleIndividualScore(data);
-            }
-            
-          } else if (topic.startsWith('summary/')) {
-            // Summary update
-            handleSummaryUpdate(data);
-            
-          } else if (topic === 'presence') {
-            // New peer announcement
-            handleNewPeer(data);
-            
-          } else if (data.type === 'state_sync') {
-            // State synchronization from another peer (fallback)
-            handleStateSync(data);
-          }
-        } catch (error) {
-          console.error('❌ Error parsing MQTT message:', error);
-        }
-      });
+client.onMessage((topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    const currentTime = new Date().toLocaleTimeString();
+    console.log(`📨 [${currentTime}] Received MQTT message on topic '${topic}':`, data);
+    
+    // Add state debugging for score messages using refs
+    if (topic.startsWith('scores/') || topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast') {
+      console.log(`🔍 MQTT Handler State Check: currentState="${currentStateRef.current}", currentTeamIndex=${currentTeamIndexRef.current + 1}, gradingStartTime=${currentTeamGradingStartTimeRef.current?.toLocaleTimeString() || 'null'}`);
+    }
+    
+    // 🔧 Handle broadcast scores (SHOULD ALREADY BE IN YOUR CODE)
+    if (topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast') {
+      console.log('🔧 Processing broadcast score:', data);
+      if (data.type === 'state_sync') {
+        handleStateSync(data);
+      } else {
+        handleIndividualScore(data);
+      }
+      
+    } else if (topic.startsWith('scores/')) {
+      // Regular peer-to-peer scores
+      if (data.type === 'state_sync') {
+        handleStateSync(data);
+      } else {
+        handleIndividualScore(data);
+      }
+      
+    } else if (topic.startsWith('summary/') || topic === 'summary/broadcast') {
+      // 🔧 Handle both regular and broadcast summaries
+      handleSummaryUpdate(data);
+      
+    } else if (topic === 'presence' || topic === 'presence/broadcast') {
+      handleNewPeer(data);
+      
+    } else if (data.type === 'state_sync') {
+      handleStateSync(data);
+    }
+  } catch (error) {
+    console.error('❌ Error parsing MQTT message:', error);
+  }
+});
       
       setMqttClient(client);
       
@@ -965,7 +970,7 @@ const App = () => {
               // Still waiting for enough responses - show QR code with counter
               <div className="qr-waiting-container">
                 <h2>Please scan the QR code to submit your evaluation</h2>
-                <QRCodeDisplay url={window.location.origin + '/poll?team=' + teams[currentTeamIndex].id} />
+                <QRCodeDisplay url="https://grading-tool-application.netlify.app/" />
                 <div className="response-counter">
                   <p>Responses received: <span className="response-count">{pollResponses}</span> / {minPollResponses} needed</p>
                   {pollResponses > 0 && (
