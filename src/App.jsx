@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from 'react';
 import Timer from './components/Timer';
 import PresentationDisplay from './components/PresentationDisplay';
 import MQTTClient from './services/MQTTClient';
@@ -6,7 +6,7 @@ import PollingDisplay from './components/PollingDisplay';
 import QRCodeDisplay from './components/QRCodeDisplay';
 import CountdownDisplay from './components/CountdownDisplay';
 import UrlUploadModal from './components/UrlUploadModal';
-import { calculateTimeRemaining, formatTime, getCountdownDisplay } from './utils/timeUtils';
+import { calculateTimeRemaining, formatTime } from './utils/timeUtils';
 
 // Memoized TeamUrlsSection component to prevent flashing
 const MemoizedTeamUrlsSection = memo(({ teams }) => {
@@ -84,10 +84,10 @@ const App = () => {
   
   // Change demoMode to true for testing with current time and short durations
   // Set to false for real presentation settings (May 28, 2025 at 2:00 PM with full durations)
-  const demoMode = true;
+  const demoMode = false;
   
-  // Create dates based on demo mode
-  const createEventDates = () => {
+  // Create dates based on demo mode - wrapped in useMemo to prevent recreation on every render
+  const eventConfig = useMemo(() => {
     let startTime, endTime;
     
     if (demoMode) {
@@ -117,18 +117,13 @@ const App = () => {
     
     return {
       date: startTime,
-      endTime: endTime
+      endTime: endTime,
+      teamCount: 6,
+      presentationTime: demoMode ? (30 * 1000) : (12 * 60 * 1000), // 30 sec or 12 min
+      gradingTime: demoMode ? (40 * 1000) : (3 * 60 * 1000),       // 40 sec or 3 min
+      warningTime: demoMode ? (10 * 1000) : (60 * 1000)            // 10 sec or 1 min warning
     };
-  };
-  
-  // Event configuration with dates based on mode
-  const eventConfig = {
-    ...createEventDates(),
-    teamCount: 6,
-    presentationTime: demoMode ? (30 * 1000) : (12 * 60 * 1000), // 30 sec or 12 min
-    gradingTime: demoMode ? (40 * 1000) : (3 * 60 * 1000),       // 40 sec or 3 min
-    warningTime: demoMode ? (10 * 1000) : (60 * 1000)            // 10 sec or 1 min warning
-  };
+  }, [demoMode]);
   
   // URL upload modal state
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
@@ -147,7 +142,6 @@ const App = () => {
   const [currentState, setCurrentState] = useState('countdown'); // countdown, presentation, grading
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(null);
-  const [counter, setCounter] = useState(0); // Add a counter to force re-renders
   const [pollResponses, setPollResponses] = useState(0); // Track number of poll responses
   const [showGradingResults, setShowGradingResults] = useState(false); // Whether to show results
   
@@ -226,7 +220,7 @@ const App = () => {
   useEffect(() => { currentTeamGradingStartTimeRef.current = currentTeamGradingStartTime; }, [currentTeamGradingStartTime]);
   useEffect(() => { manualSkipToGradingRef.current = manualSkipToGrading; }, [manualSkipToGrading]);
 
-  const checkAndShowResults = (responseCount) => {
+  const checkAndShowResults = useCallback((responseCount) => {
     // Use refs to get current state (avoid closure issues)
     const currentStateValue = currentStateRef.current;
     const currentTeamIndexValue = currentTeamIndexRef.current;
@@ -252,10 +246,10 @@ const App = () => {
       }
       console.log(`📊 Team ${currentTeamIndexValue + 1}: ${responseCount}/${minPollResponses} responses received - showing QR code`);
     }
-  };
+  }, [minPollResponses, showGradingResults]);
 
   // Modified handleIndividualScore to filter by team grading period (with duplicate checking)
-  const handleIndividualScore = (scoreData) => {
+  const handleIndividualScore = useCallback((scoreData) => {
     // Use refs to get current state (avoid closure issues)
     const currentStateValue = currentStateRef.current;
     const currentTeamIndexValue = currentTeamIndexRef.current;
@@ -334,10 +328,10 @@ const App = () => {
       
       return updated;
     });
-  };
+  }, [checkAndShowResults]);
 
   // Modified handleSummaryUpdate to filter by team grading period
-  const handleSummaryUpdate = (summaryData) => {
+  const handleSummaryUpdate = useCallback((summaryData) => {
     // Use refs to get current state (avoid closure issues)
     const currentStateValue = currentStateRef.current;
     const currentTeamIndexValue = currentTeamIndexRef.current;
@@ -411,10 +405,10 @@ const App = () => {
     
     // NEVER override poll responses with summary count - always trust local count
     console.log(`📊 [${currentStateValue}] Ignoring summary count for Team ${currentTeamIndexValue + 1}: keeping local count, summary claims ${filteredSummaryData.submittedCount}`);
-  };
+  }, []);
 
   // Handle new peer detection (grading app connection)
-  const handleNewPeer = (peerData) => {
+  const handleNewPeer = useCallback((peerData) => {
     console.log('👋 New peer detected:', peerData);
     
     // Only track the peer connection, don't affect score counting
@@ -430,10 +424,10 @@ const App = () => {
     });
     
     // Note: Do NOT increment poll responses here - peer connections are separate from scores
-  };
+  }, []);
 
   // Team-aware state sync handler
-  const handleStateSync = (syncData) => {
+  const handleStateSync = useCallback((syncData) => {
     // Use refs to get current state (avoid closure issues)
     const currentStateValue = currentStateRef.current;
     const currentTeamIndexValue = currentTeamIndexRef.current;
@@ -502,7 +496,7 @@ const App = () => {
         return prevScores;
       });
     }
-  };
+  }, [checkAndShowResults]);
 
   // Initialize MQTT client with grading app integration
   useEffect(() => {
@@ -519,48 +513,48 @@ const App = () => {
         setMqttConnected(true);
       });
       
-client.onMessage((topic, message) => {
-  try {
-    const data = JSON.parse(message.toString());
-    const currentTime = new Date().toLocaleTimeString();
-    console.log(`📨 [${currentTime}] Received MQTT message on topic '${topic}':`, data);
-    
-    // Add state debugging for score messages using refs
-    if (topic.startsWith('scores/') || topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast') {
-      console.log(`🔍 MQTT Handler State Check: currentState="${currentStateRef.current}", currentTeamIndex=${currentTeamIndexRef.current + 1}, gradingStartTime=${currentTeamGradingStartTimeRef.current?.toLocaleTimeString() || 'null'}`);
-    }
-    
-    // 🔧 Handle broadcast scores (SHOULD ALREADY BE IN YOUR CODE)
-    if (topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast') {
-      console.log('🔧 Processing broadcast score:', data);
-      if (data.type === 'state_sync') {
-        handleStateSync(data);
-      } else {
-        handleIndividualScore(data);
-      }
-      
-    } else if (topic.startsWith('scores/')) {
-      // Regular peer-to-peer scores
-      if (data.type === 'state_sync') {
-        handleStateSync(data);
-      } else {
-        handleIndividualScore(data);
-      }
-      
-    } else if (topic.startsWith('summary/') || topic === 'summary/broadcast') {
-      // 🔧 Handle both regular and broadcast summaries
-      handleSummaryUpdate(data);
-      
-    } else if (topic === 'presence' || topic === 'presence/broadcast') {
-      handleNewPeer(data);
-      
-    } else if (data.type === 'state_sync') {
-      handleStateSync(data);
-    }
-  } catch (error) {
-    console.error('❌ Error parsing MQTT message:', error);
-  }
-});
+      client.onMessage((topic, message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          const currentTime = new Date().toLocaleTimeString();
+          console.log(`📨 [${currentTime}] Received MQTT message on topic '${topic}':`, data);
+          
+          // Add state debugging for score messages using refs
+          if (topic.startsWith('scores/') || topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast') {
+            console.log(`🔍 MQTT Handler State Check: currentState="${currentStateRef.current}", currentTeamIndex=${currentTeamIndexRef.current + 1}, gradingStartTime=${currentTeamGradingStartTimeRef.current?.toLocaleTimeString() || 'null'}`);
+          }
+          
+          // 🔧 Handle broadcast scores (SHOULD ALREADY BE IN YOUR CODE)
+          if (topic === 'scores/broadcast' || topic === 'presentation/scores/broadcast') {
+            console.log('🔧 Processing broadcast score:', data);
+            if (data.type === 'state_sync') {
+              handleStateSync(data);
+            } else {
+              handleIndividualScore(data);
+            }
+            
+          } else if (topic.startsWith('scores/')) {
+            // Regular peer-to-peer scores
+            if (data.type === 'state_sync') {
+              handleStateSync(data);
+            } else {
+              handleIndividualScore(data);
+            }
+            
+          } else if (topic.startsWith('summary/') || topic === 'summary/broadcast') {
+            // 🔧 Handle both regular and broadcast summaries
+            handleSummaryUpdate(data);
+            
+          } else if (topic === 'presence' || topic === 'presence/broadcast') {
+            handleNewPeer(data);
+            
+          } else if (data.type === 'state_sync') {
+            handleStateSync(data);
+          }
+        } catch (error) {
+          console.error('❌ Error parsing MQTT message:', error);
+        }
+      });
       
       setMqttClient(client);
       
@@ -576,7 +570,7 @@ client.onMessage((topic, message) => {
       setMqttConnected(false);
       // Continue without MQTT for demonstration
     }
-  }, []); // Removed currentTeamGradingStartTime dependency - MQTT client should not reinitialize when grading start time changes
+  }, [handleIndividualScore, handleStateSync, handleSummaryUpdate, handleNewPeer]);
 
   // Load saved team URLs when the app starts
   useEffect(() => {
@@ -709,9 +703,6 @@ client.onMessage((topic, message) => {
   // Main timer logic
   useEffect(() => {
     const timerInterval = setInterval(() => {
-      // Increment counter to force component update
-      setCounter(prev => prev + 1);
-      
       // Get a fresh timestamp every tick
       const currentTime = new Date();
       
@@ -846,7 +837,7 @@ client.onMessage((topic, message) => {
     }, 1000);
     
     return () => clearInterval(timerInterval);
-  }, [currentTeamIndex, mqttClient, teams, warning, currentTeamGradingStartTime, manualSkipToGrading]); // Added manualSkipToGrading dependency
+  }, [currentTeamIndex, mqttClient, teams, warning, currentTeamGradingStartTime, manualSkipToGrading, currentState, eventConfig]);
 
   // Upload URL button component with icon
   const UploadUrlButton = () => (
@@ -898,14 +889,7 @@ client.onMessage((topic, message) => {
             
             {/* Use the memoized team URLs section component */}
             <MemoizedTeamUrlsSection teams={teams} />
-            
-            {/* Show connected peers info */}
-            {connectedPeers.length > 0 && (
-              <div className="connected-peers">
-                <p>🟢 Connected grading apps: {connectedPeers.length}</p>
-              </div>
-            )}
-            
+                        
             {/* URL Upload Modal */}
             <UrlUploadModal 
               isOpen={isUrlModalOpen}
@@ -981,35 +965,9 @@ client.onMessage((topic, message) => {
                       ></div>
                     </div>
                   )}
-                  <p>Results will display once {minPollResponses} evaluations are received</p>
-                  
-                  {/* Show connection status */}
-                  <div className="grading-status">
-                    <ConnectionStatus />
-                    {connectedPeers.length > 0 && (
-                      <span style={{ marginLeft: '15px' }}>
-                        📱 {connectedPeers.length} grading app(s) connected
-                      </span>
-                    )}
-                  </div>
-                  
-                  {/* Debug info */}
-                  {demoMode && (
-                    <div style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
-                      Debug: showGradingResults={showGradingResults.toString()}, pollResponses={pollResponses}, minRequired={minPollResponses}
-                    </div>
-                  )}
+                  <p>Results will display once {minPollResponses} evaluations are received</p>                  
                 </div>
-                
-                {/* For testing - button to manually show results */}
-                {demoMode && (
-                  <button 
-                    onClick={() => setShowGradingResults(true)}
-                    className="test-button"
-                  >
-                    Show Results (Test)
-                  </button>
-                )}
+
               </div>
             ) : (
               // Enough responses received - show poll results
@@ -1020,8 +978,6 @@ client.onMessage((topic, message) => {
                 </div>
               </div>
             )}
-            
-            <p className="grading-footer">Grading period ends in <strong>{formatTime(timeRemaining, 'mm:ss')}</strong></p>
           </div>
         );
       
@@ -1075,12 +1031,12 @@ client.onMessage((topic, message) => {
     );
   };
 
-  return (
-    <div className="app-container">
-      {renderContent()}
-      {renderSimulationStatus()}
-    </div>
-  );
+return (
+  <div className="app-container">
+    {renderContent()}
+    {demoMode && renderSimulationStatus()}
+  </div>
+);
 };
 
 export default App;
