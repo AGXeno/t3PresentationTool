@@ -104,6 +104,57 @@ class MQTTClient {
     this.publish(`presentation/grading/${this.peerId}`, JSON.stringify(gradingNotification));
   }
 
+  // NEW: Send team reset notification to all grading apps
+  notifyTeamReset(teamInfo) {
+    const resetNotification = {
+      type: 'team_reset',
+      team: teamInfo.team,
+      teamName: teamInfo.teamName,
+      startTime: teamInfo.startTime,
+      action: 'clear_scores', // Tell grading apps to clear their data
+      source: this.peerId,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Broadcast to all grading apps on the team_reset topic
+    this.publish('team_reset', JSON.stringify(resetNotification));
+    
+    console.log('🔄 Sent team reset notification:', resetNotification);
+  }
+
+  // NEW: Manual reset trigger (for testing or admin use)
+  triggerManualReset(reason = 'Manual reset from presentation tool') {
+    const resetNotification = {
+      type: 'team_reset',
+      team: 'all',
+      teamName: 'All Teams',
+      startTime: new Date().toISOString(),
+      action: 'clear_scores',
+      reason: reason,
+      source: this.peerId,
+      timestamp: new Date().toISOString()
+    };
+    
+    this.publish('team_reset', JSON.stringify(resetNotification));
+    
+    console.log('🔄 Triggered manual reset:', resetNotification);
+  }
+
+  // NEW: Check connection status
+  isConnected() {
+    return this.client && this.client.connected;
+  }
+
+  // NEW: Get connection info
+  getConnectionInfo() {
+    return {
+      peerId: this.peerId,
+      brokerUrl: this.brokerUrl,
+      connected: this.isConnected(),
+      timestamp: new Date().toISOString()
+    };
+  }
+
   disconnect() {
     if (this.client) {
       this.client.end();
