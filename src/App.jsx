@@ -120,7 +120,7 @@ const App = () => {
       endTime: endTime,
       teamCount: 6,
       presentationTime: demoMode ? (30 * 1000) : (12 * 60 * 1000), // 30 sec or 12 min
-      gradingTime: demoMode ? (60 * 1000) : (3 * 60 * 1000),       // 1 min or 3 min
+      gradingTime: demoMode ? (40 * 1000) : (3 * 60 * 1000),       // 40 sec or 3 min
       warningTime: demoMode ? (10 * 1000) : (60 * 1000)            // 10 sec or 1 min warning
     };
   }, [demoMode]);
@@ -150,6 +150,12 @@ const App = () => {
   
   // Add state to track when current team's grading started
   const [currentTeamGradingStartTime, setCurrentTeamGradingStartTime] = useState(null);
+  
+  // Track when we've manually advanced beyond natural timing
+  const [manuallyAdvancedTeam, setManuallyAdvancedTeam] = useState(null);
+  
+  // Track when the manually advanced team actually started
+  const [manuallyAdvancedTeamStartTime, setManuallyAdvancedTeamStartTime] = useState(null);
   
   // Updated polling data structure to match grading app format
   const [pollingData, setPollingData] = useState({
@@ -585,7 +591,7 @@ const App = () => {
     }
   }, []);
 
-  // Enhanced team reset when team changes
+  // Enhanced team reset when team changes - handle manual advancement
   useEffect(() => {
     console.log(`🔄 Team changed to Team ${currentTeamIndex + 1}, resetting poll data`);
     
@@ -604,8 +610,14 @@ const App = () => {
     // Clear the grading start time so it can be set fresh for the new team
     setCurrentTeamGradingStartTime(null);
     
+    // If this is a manually advanced team, ensure it starts fresh (not in grading mode)
+    if (manuallyAdvancedTeam === currentTeamIndex && currentState === 'grading') {
+      console.log(`🔄 Manually advanced Team ${currentTeamIndex + 1} - forcing fresh start (will begin with presentation)`);
+      // Don't set state here - let the timer logic handle it
+    }
+    
     console.log(`✅ Reset complete for Team ${currentTeamIndex + 1}`);
-  }, [currentTeamIndex]);
+  }, [currentTeamIndex, manuallyAdvancedTeam, currentState]);
 
   // Reset grading state when entering grading mode (not just when team changes)
   useEffect(() => {
@@ -673,6 +685,7 @@ const App = () => {
   // Reset manual skip when team changes
   useEffect(() => {
     setManualSkipToGrading(false);
+    // Don't reset manuallyAdvancedTeam here - it should persist until natural timing catches up
   }, [currentTeamIndex]);
 
   // Display debug info on mount
@@ -700,7 +713,7 @@ const App = () => {
     }
   };
 
-// Main timer logic - FIXED VERSION
+// FIXED: Timer logic with proper manual team completion
 useEffect(() => {
   const timerInterval = setInterval(() => {
     // Get a fresh timestamp every tick
@@ -721,17 +734,101 @@ useEffect(() => {
       return;
     }
     
-    // Calculate which team should be presenting based on elapsed time
+    // Calculate natural team progression based on elapsed time
     const elapsedTime = currentTime.getTime() - eventConfig.date.getTime();
     const teamTime = eventConfig.presentationTime + eventConfig.gradingTime;
-    const currentTeamIdx = Math.floor(elapsedTime / teamTime);
+    const naturalTeamIdx = Math.floor(elapsedTime / teamTime);
     
+    let currentTeamIdx;
+    
+    // Handle manual skip completion - when manual skip grading time is up, advance to next team
+    if (manualSkipToGrading && currentTeamGradingStartTime) {
+      const gradingElapsed = currentTime.getTime() - currentTeamGradingStartTime.getTime();
+      
+      if (gradingElapsed >= eventConfig.gradingTime) {
+        // Manual skip grading completed - advance to next team and reset manual skip
+        console.log(`⏭️ Manual skip grading completed for Team ${currentTeamIndex + 1} - advancing to next team`);
+        
+        const nextTeamIdx = currentTeamIndex + 1;
+        currentTeamIdx = nextTeamIdx;
+        
+        // Mark that we've manually advanced beyond natural timing
+        setManuallyAdvancedTeam(nextTeamIdx);
+        setManuallyAdvancedTeamStartTime(currentTime); // Track when this team started
+        console.log(`🔒 Manually advanced to Team ${nextTeamIdx + 1} at ${currentTime.toLocaleTimeString()} - locking to prevent natural timing override`);
+        
+        // IMPORTANT: Clear manual skip state for the NEW team
+        setManualSkipToGrading(false);
+        setCurrentTeamGradingStartTime(null);
+        
+        console.log(`🔄 Reset manual skip state for new Team ${nextTeamIdx + 1} - will start with presentation`);
+        
+      } else {
+        // Still in manual skip grading mode for current team
+        currentTeamIdx = currentTeamIndex;
+      }
+    } 
+    // FIXED: Handle completion of manually advanced teams that went through natural grading
+    else if (manuallyAdvancedTeam === currentTeamIndex && currentTeamGradingStartTime && manuallyAdvancedTeamStartTime) {
+      // Check if this manually advanced team's grading time is complete
+      const gradingElapsed = currentTime.getTime() - currentTeamGradingStartTime.getTime();
+      
+      if (gradingElapsed >= eventConfig.gradingTime) {
+        // Manually advanced team's grading completed - advance to next team
+        console.log(`🔒 Manually advanced Team ${currentTeamIndex + 1} grading completed - advancing to next team`);
+        
+        const nextTeamIdx = currentTeamIndex + 1;
+        currentTeamIdx = nextTeamIdx;
+        
+        // Mark the next team as manually advanced
+        setManuallyAdvancedTeam(nextTeamIdx);
+        setManuallyAdvancedTeamStartTime(currentTime); // Track when this team started
+        console.log(`🔒 Manually advanced to Team ${nextTeamIdx + 1} at ${currentTime.toLocaleTimeString()}`);
+        
+        // Clear grading start time for the new team
+        setCurrentTeamGradingStartTime(null);
+        
+        console.log(`🔄 Team ${nextTeamIdx + 1} will start with presentation`);
+        
+      } else {
+        // Still in grading mode for current manually advanced team
+        currentTeamIdx = currentTeamIndex;
+      }
+    }
+    else {
+      // Determine which team index to use
+      if (manuallyAdvancedTeam !== null && manuallyAdvancedTeam > naturalTeamIdx) {
+        // We've manually advanced beyond natural timing - stick with manual team
+        currentTeamIdx = manuallyAdvancedTeam;
+        console.log(`🔒 Using manually advanced team ${currentTeamIdx + 1} (natural would be ${naturalTeamIdx + 1})`);
+        
+        // Check if natural timing has caught up - if so, clear the manual advancement
+        if (naturalTeamIdx >= manuallyAdvancedTeam) {
+          console.log(`🔓 Natural timing caught up - releasing manual advancement lock`);
+          setManuallyAdvancedTeam(null);
+          setManuallyAdvancedTeamStartTime(null);
+          currentTeamIdx = naturalTeamIdx;
+        }
+      } else {
+        // Use natural team progression
+        currentTeamIdx = naturalTeamIdx;
+        
+        // Clear manual advancement if natural timing has moved beyond it
+        if (manuallyAdvancedTeam !== null && naturalTeamIdx > manuallyAdvancedTeam) {
+          setManuallyAdvancedTeam(null);
+          setManuallyAdvancedTeamStartTime(null);
+        }
+      }
+    }
+    
+    // Check if we've finished all teams
     if (currentTeamIdx >= eventConfig.teamCount) {
       setCurrentState('completed');
       clearInterval(timerInterval);
       return;
     }
     
+    // Handle team transitions
     if (currentTeamIdx !== currentTeamIndex) {
       // Send team reset notification before changing teams
       if (mqttClient && currentTeamIndex >= 0) {
@@ -742,9 +839,7 @@ useEffect(() => {
             startTime: currentTime.toISOString()
           };
           
-          // Notify grading apps to reset for new team
           mqttClient.notifyTeamReset(resetInfo);
-          
           console.log('🔄 Sent team reset notification for Team', currentTeamIdx + 1);
         } catch (error) {
           console.error('❌ Error sending team reset:', error);
@@ -754,75 +849,40 @@ useEffect(() => {
       setCurrentTeamIndex(currentTeamIdx);
     }
     
-    // Calculate time within current team's slot
-    const timeInCurrentTeamSlot = elapsedTime % teamTime;
-    
-    // Determine if we're in presentation or grading mode
-    if (timeInCurrentTeamSlot < eventConfig.presentationTime && !manualSkipToGrading) {
-      // In presentation mode (unless manually skipped)
-      if (currentState !== 'presentation') {
-        console.log(`🎬 TIMER: Switching to PRESENTATION mode for Team ${currentTeamIdx + 1} at ${currentTime.toLocaleTimeString()}`);
-      }
-      setCurrentState('presentation');
-      const presentationTimeRemaining = eventConfig.presentationTime - timeInCurrentTeamSlot;
-      setTimeRemaining(presentationTimeRemaining);
+    // FIXED: Determine if we're in presentation or grading mode
+    // Priority 1: Manual skip always forces grading mode
+    if (manualSkipToGrading && currentTeamIdx === currentTeamIndex) {
+      // ===== MANUAL SKIP GRADING MODE =====
+      const wasNotInGradingMode = currentState !== 'grading';
       
-      // Play warning sound if time is almost up
-      if (presentationTimeRemaining <= eventConfig.warningTime && 
-          presentationTimeRemaining > eventConfig.warningTime - 1000) {
-        warning.play();
-      }
-    } else {
-      // In grading mode (either naturally or manually skipped)
-      if (currentState !== 'grading') {
-        console.log(`🎯 TIMER: Switching to GRADING mode for Team ${currentTeamIdx + 1} at ${currentTime.toLocaleTimeString()}`);
-        if (manualSkipToGrading) {
-          console.log(`⏭️ Manual skip active for Team ${currentTeamIdx + 1} - switching to grading mode`);
-        }
+      if (wasNotInGradingMode) {
+        console.log(`🎯 TIMER: MANUAL SKIP - Switching to GRADING mode for Team ${currentTeamIdx + 1} at ${currentTime.toLocaleTimeString()}`);
       }
       setCurrentState('grading');
       
-      // FIX: Calculate grading time remaining properly for manual skip
-      let gradingTimeRemaining;
-      
-      // Set the grading start time for the current team (only once per grading session)
+      // Set grading start time if not already set
       setCurrentTeamGradingStartTime(prevStartTime => {
-        // Only set if we don't have a start time for this team's grading session
         if (!prevStartTime) {
-          const gradingStartTime = manualSkipToGrading && timeInCurrentTeamSlot < eventConfig.presentationTime
-            ? currentTime // Use current time if manually skipped
-            : new Date(eventConfig.date.getTime() + (currentTeamIdx * teamTime) + eventConfig.presentationTime);
-          
-          console.log(`🕐 TIMER: Set grading start time for Team ${currentTeamIdx + 1}: ${gradingStartTime.toLocaleTimeString()}`);
-          if (manualSkipToGrading) {
-            console.log(`⏭️ Manual skip detected - using current time as grading start`);
-          }
+          const gradingStartTime = new Date();
+          console.log(`🕐 MANUAL SKIP: Set grading start time for Team ${currentTeamIdx + 1}: ${gradingStartTime.toLocaleTimeString()}`);
           return gradingStartTime;
         }
         return prevStartTime;
       });
       
-      // FIXED: Calculate remaining time based on actual grading start time
+      // Calculate grading time remaining from when grading actually started
+      let gradingTimeRemaining;
       if (currentTeamGradingStartTime) {
         const gradingElapsed = currentTime.getTime() - currentTeamGradingStartTime.getTime();
         gradingTimeRemaining = Math.max(0, eventConfig.gradingTime - gradingElapsed);
-        
-        if (manualSkipToGrading && timeInCurrentTeamSlot < eventConfig.presentationTime) {
-          console.log(`⏭️ Manual skip: ${Math.floor(gradingElapsed/1000)}s elapsed, ${Math.floor(gradingTimeRemaining/1000)}s remaining`);
-        }
       } else {
-        // Fallback if grading start time isn't set yet
-        if (manualSkipToGrading && timeInCurrentTeamSlot < eventConfig.presentationTime) {
-          gradingTimeRemaining = eventConfig.gradingTime;
-        } else {
-          gradingTimeRemaining = teamTime - timeInCurrentTeamSlot;
-        }
+        gradingTimeRemaining = eventConfig.gradingTime;
       }
       
       setTimeRemaining(gradingTimeRemaining);
       
-      // Notify grading app through MQTT when entering grading mode
-      if (mqttClient && (Math.abs(timeInCurrentTeamSlot - eventConfig.presentationTime) < 1000 || manualSkipToGrading)) {
+      // Send MQTT notification when entering grading mode (only once)
+      if (wasNotInGradingMode && mqttClient) {
         try {
           const gradingInfo = {
             team: teams[currentTeamIdx].id,
@@ -843,11 +903,134 @@ useEffect(() => {
           gradingTimeRemaining > eventConfig.warningTime - 1000) {
         warning.play();
       }
+      
+    } else {
+      // Priority 2: Calculate timing for current team slot
+      let timeInCurrentTeamSlot;
+      
+      // FIXED: Manually advanced teams use their own timeline
+      if (manuallyAdvancedTeam === currentTeamIdx && manuallyAdvancedTeamStartTime) {
+        // This team was manually advanced - calculate time from when it actually started
+        timeInCurrentTeamSlot = currentTime.getTime() - manuallyAdvancedTeamStartTime.getTime();
+        
+        // Debug logging
+        if (timeInCurrentTeamSlot < 2000) { // First 2 seconds
+          console.log(`🔒 Manual team ${currentTeamIdx + 1}: ${Math.floor(timeInCurrentTeamSlot/1000)}s elapsed since manual start`);
+        }
+      } else {
+        // Natural timing calculation for non-manually-advanced teams
+        timeInCurrentTeamSlot = elapsedTime % teamTime;
+      }
+      
+      // Determine mode based on timing within the team's slot
+      if (timeInCurrentTeamSlot < eventConfig.presentationTime) {
+        // ===== PRESENTATION MODE =====
+        if (currentState !== 'presentation') {
+          console.log(`🎬 TIMER: Switching to PRESENTATION mode for Team ${currentTeamIdx + 1} at ${currentTime.toLocaleTimeString()}`);
+          if (manuallyAdvancedTeam === currentTeamIdx) {
+            console.log(`🔒 Manual team ${currentTeamIdx + 1}: Starting presentation phase`);
+          }
+        }
+        setCurrentState('presentation');
+        const presentationTimeRemaining = eventConfig.presentationTime - timeInCurrentTeamSlot;
+        setTimeRemaining(presentationTimeRemaining);
+        
+        // Play warning sound if time is almost up
+        if (presentationTimeRemaining <= eventConfig.warningTime && 
+            presentationTimeRemaining > eventConfig.warningTime - 1000) {
+          warning.play();
+        }
+        
+      } else {
+        // ===== GRADING MODE =====
+        const wasNotInGradingMode = currentState !== 'grading';
+        
+        if (wasNotInGradingMode) {
+          console.log(`🎯 TIMER: Switching to GRADING mode for Team ${currentTeamIdx + 1} at ${currentTime.toLocaleTimeString()}`);
+          if (manuallyAdvancedTeam === currentTeamIdx) {
+            console.log(`🔒 Manual team ${currentTeamIdx + 1}: Starting grading phase`);
+          }
+        }
+        setCurrentState('grading');
+        
+        // Set grading start time if not already set
+        setCurrentTeamGradingStartTime(prevStartTime => {
+          if (!prevStartTime) {
+            let gradingStartTime;
+            
+            if (manuallyAdvancedTeam === currentTeamIdx && manuallyAdvancedTeamStartTime) {
+              // For manually advanced teams, grading starts after their presentation time
+              gradingStartTime = new Date(manuallyAdvancedTeamStartTime.getTime() + eventConfig.presentationTime);
+              console.log(`🕐 MANUAL TEAM: Set grading start time for Team ${currentTeamIdx + 1}: ${gradingStartTime.toLocaleTimeString()}`);
+            } else {
+              // Natural progression - grading starts after presentation time
+              const teamStartTime = new Date(eventConfig.date.getTime() + (currentTeamIdx * teamTime));
+              gradingStartTime = new Date(teamStartTime.getTime() + eventConfig.presentationTime);
+              console.log(`🕐 NATURAL: Set grading start time for Team ${currentTeamIdx + 1}: ${gradingStartTime.toLocaleTimeString()}`);
+            }
+            
+            return gradingStartTime;
+          }
+          return prevStartTime;
+        });
+        
+        // Calculate grading time remaining
+        let gradingTimeRemaining;
+        
+        if (currentTeamGradingStartTime) {
+          const gradingElapsed = Math.max(0, currentTime.getTime() - currentTeamGradingStartTime.getTime());
+          gradingTimeRemaining = Math.max(0, eventConfig.gradingTime - gradingElapsed);
+        } else {
+          // Fallback calculation
+          gradingTimeRemaining = Math.max(0, eventConfig.gradingTime - (timeInCurrentTeamSlot - eventConfig.presentationTime));
+        }
+        
+        setTimeRemaining(gradingTimeRemaining);
+        
+        // Send MQTT notification when entering grading mode (only once)
+        if (wasNotInGradingMode && mqttClient) {
+          try {
+            const gradingInfo = {
+              team: teams[currentTeamIdx].id,
+              teamName: teams[currentTeamIdx].name,
+              startTime: currentTime.toISOString(),
+              endTime: new Date(currentTime.getTime() + gradingTimeRemaining).toISOString()
+            };
+            
+            mqttClient.notifyGradingWindow(gradingInfo);
+            console.log('📢 TIMER: Sent grading window notification:', gradingInfo);
+          } catch (error) {
+            console.error('❌ Error publishing grading notification:', error);
+          }
+        }
+        
+        // Play warning sound if grading time is almost up
+        if (gradingTimeRemaining <= eventConfig.warningTime && 
+            gradingTimeRemaining > eventConfig.warningTime - 1000) {
+          warning.play();
+        }
+      }
     }
   }, 1000);
   
   return () => clearInterval(timerInterval);
-}, [currentTeamIndex, mqttClient, teams, warning, currentTeamGradingStartTime, manualSkipToGrading, currentState, eventConfig]);
+}, [currentTeamIndex, mqttClient, teams, warning, currentTeamGradingStartTime, manualSkipToGrading, currentState, eventConfig, manuallyAdvancedTeam, manuallyAdvancedTeamStartTime]);
+//here
+
+  // Reset manual advancement when team changes naturally
+  useEffect(() => {
+    if (manuallyAdvancedTeam !== null) {
+      const elapsedTime = new Date().getTime() - eventConfig.date.getTime();
+      const teamTime = eventConfig.presentationTime + eventConfig.gradingTime;
+      const naturalTeamIdx = Math.floor(elapsedTime / teamTime);
+      
+      if (naturalTeamIdx >= manuallyAdvancedTeam) {
+        console.log(`🔓 Clearing manual advancement - natural timing has caught up`);
+        setManuallyAdvancedTeam(null);
+        setManuallyAdvancedTeamStartTime(null);
+      }
+    }
+  }, [manuallyAdvancedTeam, manuallyAdvancedTeamStartTime, eventConfig]);
 
   // Upload URL button component with icon
   const UploadUrlButton = () => (
@@ -1041,12 +1224,12 @@ useEffect(() => {
     );
   };
 
-return (
-  <div className="app-container">
-    {renderContent()}
-    {demoMode && renderSimulationStatus()}
-  </div>
-);
+  return (
+    <div className="app-container">
+      {renderContent()}
+      {demoMode && renderSimulationStatus()}
+    </div>
+  );
 };
 
 export default App;
